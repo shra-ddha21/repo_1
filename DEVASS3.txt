@@ -1,0 +1,848 @@
+Ass-3
+
+Set A: 
+1. Launch two new virtual machine instances. The first should run an operating system from 
+the Debian family, and the second should run one from the Red Hat family. 
+2. Create a project folder containing an ansible.cfg file and an inventory file. The inventory 
+file should contain the details for two managed nodes. Then, establish and test the 
+connection between the Ansible control node and the two managed nodes. 
+3. Run following ad-hoc command: 
+I. Install apache2 on a Debian system using an Ansible ad-hoc command. 
+II. Install httpd on RedHat system using an Ansible ad-hoc command.
+III.Demonstrate at least one use case of ansible.builtin.copy module using adhoc 
+command. 
+IV.Demonstrate at least one use case of ansible.builtin.file module using adhoc 
+command. 
+V.Demonstrate at least one use case of copy module using adhoc command. 
+VI.Demonstrate at least one use case of ansible.builtin.service module using adhoc 
+command. 
+VII.Demonstrate at least one use case of ansible.builtin.apt module using adhoc 
+command. 
+VIII.Demonstrate at least one use case of ansible.builtin.yum module using adhoc 
+command. 
+IX.Demonstrate at least one use case of ansible.builtin.user module using adhoc 
+command. 
+X.Demonstrate at least one use case of ansible.builtin.setup module using adhoc 
+command.
+Answer:
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+1. Launch Your AWS EC2 Instances
+First, you need to create your two virtual machines (managed nodes) and identify your control node.
+
+Control Node: This will be your own computer (e.g., your new Asus TUF laptop) where you will install Ansible and run the commands.
+
+Managed Nodes: These are the two EC2 instances you will launch.
+
+Steps to Launch Instances:
+
+Log in to the AWS Management Console and navigate to the EC2 service.
+
+Create a Key Pair:
+
+Go to Network & Security > Key Pairs.
+
+Click Create key pair.
+
+Name it ansible-key and choose the .pem format.
+
+Your browser will download ansible-key.pem. Keep this file safe.
+
+Create a Security Group:
+
+Go to Network & Security > Security Groups.
+
+Click Create security group.
+
+Name it ansible-sg.
+
+Add an Inbound rule:
+
+Type: SSH
+
+Port: 22
+
+Source: My IP (This is more secure)
+
+Click Create security group.
+
+Launch Instance 1 (Debian Family):
+
+Go to Instances and click Launch instances.
+
+Name: debian-node
+
+Application and OS Images (AMI): Select Ubuntu Server (e.g., "Ubuntu Server 22.04 LTS").
+
+Instance type: Select t2.micro (This is eligible for the AWS Free Tier).
+
+Key pair: Select the ansible-key you created.
+
+Network settings: Click Edit.
+
+Security group: Select Select existing security group and choose ansible-sg.
+
+Click Launch instance.
+
+Launch Instance 2 (Red Hat Family):
+
+Click Launch instances again.
+
+Name: redhat-node
+
+Application and OS Images (AMI): Select Amazon Linux (e.g., "Amazon Linux 2023 AMI"). This is RHEL-family.
+
+Instance type: Select t2.micro.
+
+Key pair: Select the same ansible-key.
+
+Network settings: Select the same ansible-sg security group.
+
+Click Launch instance.
+
+Get Your IP Addresses:
+
+Go back to your Instances list. Wait for both instances to show "Running" and "2/2 checks passed."
+
+Note down the Public IPv4 address for both debian-node and redhat-node.
+
+2. Set Up Your Ansible Project
+On your local machine (the control node), you'll set up your project folder.
+
+Install Ansible (if not already):
+
+Bash
+
+pip install ansible
+Create Your Project Folder:
+
+Bash
+
+mkdir ansible-aws-project
+cd ansible-aws-project
+Move Your Key Pair:
+
+Move the ansible-key.pem file you downloaded into this new ansible-aws-project folder.
+
+Crucial: Set the correct permissions for the key file.
+
+Bash
+
+chmod 400 ansible-key.pem
+Create ansible.cfg file:
+
+Create a file named ansible.cfg in your project folder.
+
+This file tells Ansible what defaults to use for this project.
+
+Ini, TOML
+
+[defaults]
+inventory = inventory
+private_key_file = ansible-key.pem
+host_key_checking = False
+Create inventory file:
+
+Create a file named inventory.
+
+This file lists your managed nodes and groups them. Replace the placeholders with the Public IPs you noted earlier.
+
+Note: Ubuntu AMIs use the user ubuntu. Amazon Linux AMIs use the user ec2-user. We must specify this.
+
+Ini, TOML
+
+[debian_nodes]
+<your-ubuntu-public-ip> ansible_user=ubuntu
+
+[redhat_nodes]
+<your-amazon-linux-public-ip> ansible_user=ec2-user
+
+[all_servers:children]
+debian_nodes
+redhat_nodes
+Test the Connection:
+
+Run the Ansible ping module to confirm your control node can connect to both managed nodes.
+
+Bash
+
+ansible all -m ping
+Expected Output: You should see two "SUCCESS" messages in green, each returning a "pong".
+
+JSON
+
+<your-ubuntu-public-ip> | SUCCESS => {
+    "ansible_facts": {
+        "discovered_interpreter_python": "/usr/bin/python3"
+    },
+    "changed": false,
+    "ping": "pong"
+}
+<your-amazon-linux-public-ip> | SUCCESS => {
+    "ansible_facts": {
+        "discovered_interpreter_python": "/usr/bin/python3"
+    },
+    "changed": false,
+    "ping": "pong"
+}
+3. Run Ad-hoc Commands
+Now you can run your list of commands. The --become flag is used to run the command with sudo (root) privileges, which is required for installing software or managing services.
+
+I. Install apache2 on Debian system:
+
+Bash
+
+ansible debian_nodes -m apt -a "name=apache2 state=present" --become
+II. Install httpd on RedHat system:
+
+Bash
+
+ansible redhat_nodes -m yum -a "name=httpd state=present" --become
+III. ansible.builtin.copy (copy a file from local to remote):
+
+First, create a simple index.html file on your local machine:
+
+Bash
+
+echo "Welcome to my Ansible-managed website!" > index.html
+Now, copy it to the default web directory on all servers:
+
+Bash
+
+ansible all_servers -m ansible.builtin.copy -a "src=index.html dest=/var/www/html/index.html" --become
+IV. ansible.builtin.file (create a new directory):
+
+This command creates a new directory /opt/app-data on all servers.
+
+Bash
+
+ansible all_servers -m ansible.builtin.file -a "path=/opt/app-data state=directory mode=0755" --become
+V. copy module (different use case: set file content directly):
+
+This demonstrates using the content attribute instead of src to create a file with specific text.
+
+Bash
+
+ansible all_servers -m copy -a "content='This is a config file\nVERSION=1.0' dest=/etc/myapp.conf" --become
+VI. ansible.builtin.service (start and enable a service):
+
+This command will start the httpd service on your Red Hat node and ensure it starts on boot.
+
+Bash
+
+ansible redhat_nodes -m ansible.builtin.service -a "name=httpd state=started enabled=yes" --become
+VII. ansible.builtin.apt (update package cache):
+
+This is the equivalent of running sudo apt-get update on your Debian node.
+
+Bash
+
+ansible debian_nodes -m ansible.builtin.apt -a "update_cache=yes" --become
+VIII. ansible.builtin.yum (install a different package):
+
+This command installs the git tool on your Red Hat node.
+
+Bash
+
+ansible redhat_nodes -m ansible.builtin.yum -a "name=git state=present" --become
+IX. ansible.builtin.user (create a new user):
+
+This command creates a new user named jdoe on all your servers.
+
+Bash
+
+ansible all_servers -m ansible.builtin.user -a "name=jdoe comment='John Doe' state=present" --become
+X. ansible.builtin.setup (gather system facts):
+
+This module gathers a huge amount of data about the host systems. Using a filter makes it much more readable.
+
+This command will show you just the OS distribution for your Debian node:
+
+Bash
+
+ansible debian_nodes -m ansible.builtin.setup -a "filter=ansible_distribution*"
+Output:
+
+JSON
+
+<your-ubuntu-public-ip> | SUCCESS => {
+    "ansible_facts": {
+        "ansible_distribution": "Ubuntu",
+        "ansible_distribution_major_version": "22",
+        "ansible_distribution_release": "jammy",
+        "ansible_distribution_version": "22.04"
+    },
+    "changed": false
+}
+You have now successfully completed the entire assignment!
+
+**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+Set B:
+1. Launch two new virtual machine instances. The first & second should run an operating 
+system from the Debian family, and the third should run one from the Red Hat family. 
+2. Create a project folder containing an ansible.cfg, inventory file and playbooks folder. The 
+inventory file should contain the details for three managed nodes. Then, establish and test 
+the connection between the Ansible control node and the two managed nodes. 
+3. Create an Ansible playbook to update the apt package manager, install Java, and display the 
+installed Java version on all managed nodes. 
+4. Create an Ansible playbook to install the Nginx web server and start the Nginx service on 
+all managed nodes. 
+5. Create an Ansible playbook to add multiple users on all managed nodes, ensuring that 
+each user has a home directory.
+Answer:
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+1. 🚀 Launch Your AWS EC2 Instances
+For this set, you need three instances. We must also update your security group to allow web traffic for the Nginx playbook.
+
+Use Your Existing Key Pair: You can re-use the ansible-key.pem file from Set A.
+
+Update Your Security Group (ansible-sg):
+
+Go to the EC2 > Security Groups section in your AWS Console.
+
+Select the ansible-sg you created.
+
+Click the Inbound rules tab, then Edit inbound rules.
+
+Click Add rule:
+
+Type: HTTP
+
+Port: 80
+
+Source: Anywhere (or 0.0.0.0/0)
+
+Click Save rules. This is necessary to test your Nginx web server in Task 4.
+
+Launch Instance 1 (Debian):
+
+Name: debian-node-1
+
+Application and OS Images (AMI): Ubuntu Server 22.04 LTS
+
+Instance type: t2.micro (Free Tier eligible)
+
+Key pair: ansible-key
+
+Security group: Select your existing ansible-sg
+
+Click Launch instance.
+
+Launch Instance 2 (Debian):
+
+Name: debian-node-2
+
+AMI: Ubuntu Server 22.04 LTS
+
+Instance type: t2.micro
+
+Key pair: ansible-key
+
+Security group: ansible-sg
+
+Click Launch instance.
+
+Launch Instance 3 (Red Hat):
+
+Name: redhat-node-1
+
+AMI: Amazon Linux 2023 (This is RHEL-family)
+
+Instance type: t2.micro
+
+Key pair: ansible-key
+
+Security group: ansible-sg
+
+Click Launch instance.
+
+Get Your IP Addresses:
+
+Go to your Instances list.
+
+Note down the Public IPv4 address for all three new instances.
+
+2. 📁 Set Up Your Ansible Project
+On your WSL terminal, create a new project folder as specified.
+
+Create Your Project Structure:
+
+Bash
+
+# Create a new folder for this set
+mkdir ansible-setB
+cd ansible-setB
+
+# Create the 'playbooks' folder as requested
+mkdir playbooks
+
+# Create your config and inventory files
+touch ansible.cfg
+touch inventory
+Copy and Secure Your Key:
+
+Copy your ansible-key.pem file (from your Set A project or your downloads) into this new ansible-setB folder.
+
+Set the correct permissions (since you are on WSL, chmod is the correct command):
+
+Bash
+
+chmod 400 ansible-key.pem
+Edit ansible.cfg:
+
+Open the file (nano ansible.cfg) and add the following content. This tells Ansible where to find your inventory and key.
+
+Ini, TOML
+
+[defaults]
+inventory = inventory
+private_key_file = ansible-key.pem
+host_key_checking = False
+Edit inventory:
+
+Open the file (nano inventory) and add your 3 new servers. Replace the IPs with your new public IPs. This inventory will define your groups of managed nodes.
+
+
+Ini, TOML
+
+[debian_nodes]
+<debian-node-1-public-ip> ansible_user=ubuntu
+<debian-node-2-public-ip> ansible_user=ubuntu
+
+[redhat_nodes]
+<redhat-node-1-public-ip> ansible_user=ec2-user
+
+[all_servers:children]
+debian_nodes
+redhat_nodes
+Test the Connection:
+
+Run the ping module to confirm you can connect to all 3 nodes.
+
+
+Bash
+
+ansible all -m ping
+Expected Output: You should see three "SUCCESS" messages in green, one for each of your new IPs.
+
+3. ☕ Playbook: Install Java
+This playbook will update your package manager, install Java, and then display the version. It uses when conditions to run different tasks on different operating systems.
+
+Create the playbook file:
+
+Bash
+
+nano playbooks/java_install.yml
+Add this content:
+
+YAML
+
+---
+- name: Playbook to Install Java
+  hosts: all_servers
+  become: yes  # This means "run as root" (using sudo)
+
+  tasks:
+    - name: Update apt cache on Debian nodes
+      ansible.builtin.apt:
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Install OpenJDK 11 on Debian nodes
+      ansible.builtin.apt:
+        name: openjdk-11-jdk
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install Java 11 (Corretto) on Red Hat nodes
+      ansible.builtin.yum:
+        name: java-11-amazon-corretto
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Check Java version
+      ansible.builtin.command: java -version
+      register: java_version_output
+      changed_when: false # This command doesn't change anything
+
+    - name: Display Java version
+      ansible.builtin.debug:
+        # Java prints its version to stderr, not stdout
+        var: java_version_output.stderr_lines
+Run the playbook:
+
+Bash
+
+ansible-playbook playbooks/java_install.yml
+You will see it "skip" the apt tasks for the Red Hat node and "skip" the yum task for the Debian nodes. This is correct!
+
+4. 🌐 Playbook: Install Nginx
+This playbook will install and start the Nginx web server. We will use the generic package module, which is smart enough to use apt or yum automatically.
+
+Create the playbook file:
+
+Bash
+
+nano playbooks/nginx_install.yml
+Add this content:
+
+YAML
+
+---
+- name: Playbook to Install and Start Nginx
+  hosts: all_servers
+  become: yes
+
+  tasks:
+    - name: Install Nginx
+      ansible.builtin.package:
+        name: nginx
+        state: present
+
+    - name: Start and enable the Nginx service
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: yes
+Run the playbook:
+
+Bash
+
+ansible-playbook playbooks/nginx_install.yml
+Verify the result:
+
+Open your web browser.
+
+Paste the Public IPv4 address of any of your three EC2 instances into the address bar.
+
+You should see the "Welcome to Nginx!" page. (This works because you opened port 80).
+
+5. 👥 Playbook: Add Multiple Users
+This playbook will add multiple users and ensure their home directories are created, as requested. This demonstrates how to use a loop.
+
+Create the playbook file:
+
+Bash
+
+nano playbooks/add_users.yml
+Add this content:
+
+YAML
+
+---
+- name: Playbook to Add Multiple Users
+  hosts: all_servers
+  become: yes
+
+  tasks:
+    - name: Add several new users
+      ansible.builtin.user:
+        name: "{{ item }}"  # 'item' is the variable for the loop
+        state: present
+        create_home: yes   # Ensures /home/alice, etc. is made
+      loop:
+        - alice
+        - bob
+        - charlie
+Run the playbook:
+
+Bash
+
+ansible-playbook playbooks/add_users.yml
+Verify the result (with an ad-hoc command):
+
+Pick one of the users and check if they exist on all servers.
+
+Bash
+
+ansible all -m shell -a "id alice"
+You should see a successful output from all three servers showing the user alice's uid and gid.
+
+You have now successfully completed all the tasks for Assignment 3, Set B!
+
+**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+Set C: 
+1.Create an Ansible playbook to: 
+I.Install the Nginx web server. 
+II.Download sample project files (use: https://www.tooplate.com/) .
+III.Transfer all files to the web server's document root. 
+IV.Ensure that the project is accessible via the managed node's public IP address in a 
+web browser.
+Answer:
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+We will continue using the same 3-node AWS setup and the ansible-setB project folder from the previous assignment. The security group (ansible-sg) should already allow HTTP traffic on port 80 from Set B.
+
+Deploying a Static Website (Set C, Task 1)
+This playbook will install Nginx, download a sample website zip file from https://www.tooplate.com/, unzip it, and move the contents to the correct web server directory for both Debian and Red Hat systems.
+
+Based on my search, I've found a good sample template called "Little Fashion".
+
+Download URL: https://www.tooplate.com/zip-templates/2127-little-fashion.zip
+
+Folder inside zip: 2127-little-fashion
+
+1. Create the Playbook
+In your ansible-setB project folder, create a new file named deploy_website.yml inside your playbooks directory.
+
+Bash
+
+nano playbooks/deploy_website.yml
+Now, add the following content to this file.
+
+YAML
+
+---
+- name: Deploy Static Website to Nginx
+  hosts: all_servers
+  become: yes
+
+  vars:
+    # Define the download URL and the folder name inside the zip
+    download_url: "https://www.tooplate.com/zip-templates/2127-little-fashion.zip"
+    unzip_folder: "2127-little-fashion"
+    unzip_dest: "/tmp"
+
+  tasks:
+    - name: Set web root directory for Debian
+      ansible.builtin.set_fact:
+        web_root: /var/www/html
+      when: ansible_os_family == "Debian"
+
+    - name: Set web root directory for Red Hat
+      ansible.builtin.set_fact:
+        web_root: /usr/share/nginx/html
+      when: ansible_os_family == "RedHat"
+
+    - name: I. Install Nginx
+      ansible.builtin.package:
+        name: nginx
+        state: present
+
+    - name: II. Download and Unarchive Website
+      ansible.builtin.unarchive:
+        src: "{{ download_url }}"
+        dest: "{{ unzip_dest }}"
+        remote_src: yes
+        # Idempotency: Don't re-download if the folder already exists
+        creates: "{{ unzip_dest }}/{{ unzip_folder }}/"
+
+    - name: III. Transfer files to Nginx root
+      ansible.builtin.shell:
+        # The /* copies the *contents* of the folder, not the folder itself
+        cmd: "cp -R {{ unzip_dest }}/{{ unzip_folder }}/* {{ web_root }}/"
+        # Idempotency: Don't copy if the index.html is already there
+        creates: "{{ web_root }}/index.html"
+
+    - name: Ensure Nginx is started and enabled
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: yes
+2. How This Playbook Works
+set_fact: We first set a variable named web_root based on the host's OS (ansible_os_family). This is the key to making the playbook work for both Debian and Red Hat.
+
+ansible.builtin.package: This installs Nginx. If it's already installed from Set B, this task will just report "ok" and change nothing.
+
+ansible.builtin.unarchive: This powerful module does two things:
+
+Downloads the file because we set remote_src: yes.
+
+Unzips it to the dest directory (/tmp).
+
+The creates parameter makes this task idempotent. If it sees the {{ unzip_dest }}/{{ unzip_folder }}/ directory already exists, it will skip this task.
+
+ansible.builtin.shell: Since we are copying files from one remote directory (/tmp/2127-little-fashion) to another ({{ web_root }}), the shell module is the most direct tool.
+
+The /* at the end of the source path is critical. It tells cp to copy the contents of the folder, not the folder itself.
+
+The creates parameter checks if index.html already exists in the web root. If it does, this task is skipped, making it idempotent.
+
+3. Run the Playbook
+Save the file and run it from your WSL terminal:
+
+Bash
+
+ansible-playbook playbooks/deploy_website.yml
+4. Verify the Result
+To verify that the task was successful:
+
+Go to your AWS EC2 Console and get the Public IPv4 address of any of your three instances.
+
+Paste this IP address into your web browser.
+
+You should now see the "Little Fashion" website live on the internet.
+
+This completes Set C, Task 1.
+**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+2. Design Ansible playbook Deploy and configure Time service idempotently on all managed 
+nodes. (Note: use concept of conditionals and handlers) 
+Answer:
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+1. Create the Template Files
+First, we need to create the configuration file templates. You must create a templates directory inside your ansible-setB project folder if it doesn't exist.
+
+Bash
+
+# Still inside your ansible-setB project folder
+mkdir -p templates
+A. Create the template for systemd-timesyncd (for Debian/Ubuntu):
+
+Bash
+
+nano templates/timesyncd.conf.j2
+Paste this content into the file. This tells timesyncd which servers to use.
+
+Ini, TOML
+
+[Time]
+NTP=0.pool.ntp.org 1.pool.ntp.org 2.pool.ntp.org
+FallbackNTP=ntp.ubuntu.com
+B. Create the template for chrony (for Red Hat/Amazon Linux):
+
+Bash
+
+nano templates/chrony.conf.j2
+Paste this content into the file. This is a standard chrony config file.
+
+Ini, TOML
+
+# Use public servers from the pool.
+pool 0.pool.ntp.org iburst
+pool 1.pool.ntp.org iburst
+pool 2.pool.ntp.org iburst
+
+# Record the rate at which the clock drifts.
+driftfile /var/lib/chrony/drift
+
+# Allow the system clock to be stepped in the first three updates
+# if its offset is larger than 1 second.
+makestep 1.0 3
+
+# Enable kernel synchronization of the real-time clock (RTC).
+rtcsync
+
+# Specify directory for log files.
+logdir /var/log/chrony
+2. Create the Ansible Playbook
+Now, create the new playbook file named deploy_time_service.yml in your playbooks folder.
+
+Bash
+
+nano playbooks/deploy_time_service.yml
+Paste the entire playbook content below into this file.
+
+YAML
+
+---
+- name: Configure Time Service (NTP)
+  hosts: all_servers
+  become: yes
+
+  tasks:
+    # --- Debian (Ubuntu) Tasks ---
+    - name: Configure systemd-timesyncd on Debian
+      ansible.builtin.template:
+        src: templates/timesyncd.conf.j2
+        dest: /etc/systemd/timesyncd.conf
+        owner: root
+        group: root
+        mode: '0644'
+      when: ansible_os_family == "Debian"
+      notify: Restart timesyncd # This triggers the handler
+
+    - name: Ensure systemd-timesyncd is started and enabled on Debian
+      ansible.builtin.service:
+        name: systemd-timesyncd
+        state: started
+        enabled: yes
+      when: ansible_os_family == "Debian"
+
+    # --- Red Hat (Amazon Linux) Tasks ---
+    - name: Install chrony on Red Hat
+      ansible.builtin.package:
+        name: chrony
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Configure chrony on Red Hat
+      ansible.builtin.template:
+        src: templates/chrony.conf.j2
+        dest: /etc/chrony.conf
+        owner: root
+        group: root
+        mode: '0644'
+      when: ansible_os_family == "RedHat"
+      notify: Restart chronyd # This triggers the handler
+
+    - name: Ensure chronyd is started and enabled on Red Hat
+      ansible.builtin.service:
+        # Note the 'd' at the end for the service name
+        name: chronyd
+        state: started
+        enabled: yes
+      when: ansible_os_family == "RedHat"
+
+  # --- Handlers ---
+  # These tasks only run if "notified" by a change in a previous task.
+  handlers:
+    - name: Restart timesyncd
+      ansible.builtin.service:
+        name: systemd-timesyncd
+        state: restarted
+      listen: Restart timesyncd # This name matches the 'notify'
+
+    - name: Restart chronyd
+      ansible.builtin.service:
+        name: chronyd
+        state: restarted
+      listen: Restart chronyd # This name matches the 'notify'
+3. How It Works (Conditionals & Handlers)
+Conditionals (when):
+
+The playbook is split into two sections of tasks.
+
+The first set of tasks only runs when: ansible_os_family == "Debian".
+
+The second set only runs when: ansible_os_family == "RedHat".
+
+This allows you to manage two different services and configuration files all within one playbook.
+
+Handlers (notify & listen):
+
+The ansible.builtin.template tasks  both have a notify statement.
+
+
+Ansible's template module is idempotent. It checks if the file on the server already matches the template.
+
+If there is no change: The task reports "ok" (green), and the notify is not sent.
+
+If the file is changed: The task reports "changed" (yellow), and the notify message is sent to the handlers block.
+
+The handler task with the matching listen statement (or matching name) will then run at the very end of the play. This ensures the service is only restarted when a configuration change actually happens.
+
+4. Run the Playbook
+Execute your new playbook from the ansible-setB directory:
+
+Bash
+
+ansible-playbook playbooks/deploy_time_service.yml
+Expected Output: You will see the tasks for Red Hat "skipping" on your Debian nodes, and the Debian tasks "skipping" on your Red Hat node. You will also see the template tasks report "changed" (yellow) on the first run, which will trigger the "RUNNING HANDLER" at the end.
+
+If you run the playbook a second time, all tasks will report "ok" (green), and the handlers will not run, proving the playbook is idempotent.
+
+5. Verify the Result
+You can check the status of the time service on all nodes with an ad-hoc command.
+
+On your Debian nodes, timedatectl status is a good command.
+
+On your Red Hat nodes, chronyc sources is the command.
+
+Let's run chronyc sources on the Red Hat node specifically:
+
+Bash
+
+ansible redhat_nodes -m shell -a "chronyc sources"
+You should see an output listing the pool.ntp.org servers you defined.
+**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************

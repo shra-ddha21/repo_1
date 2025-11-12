@@ -1,0 +1,362 @@
+Ass-5
+
+Set A: 
+1. Deploy postgres Database with adminer on k8s cluster having one master and one worker 
+node.
+Answer:
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+Phase 1: 🖥️ Provision Your AWS EC2 Nodes
+You need two Ubuntu instances. The K8s control plane requires more resources than a t2.micro, so we'll use t2.medium.
+
+Create a K8s Security Group (k8s-sg):
+
+Go to EC2 > Security Groups > Create security group.
+
+Name: k8s-sg
+
+Inbound Rules:
+
+Rule 1 (SSH): Type: SSH, Port: 22, Source: My IP.
+
+Rule 2 (K8s API): Type: Custom TCP, Port: 6443, Source: My IP (and later, you'll add the worker's private IP).
+
+Rule 3 (NodePorts): Type: Custom TCP, Port Range: 30000-32767, Source: Anywhere (0.0.0.0/0) (This allows you to access your web UIs).
+
+Rule 4 (Internal): Type: All traffic, Source: k8s-sg (Select the ID of this same security group. This allows all nodes within the group to communicate freely).
+
+Click Create security group.
+
+Launch Instance 1 (Master):
+
+AMI: Ubuntu Server 22.04 LTS
+
+Instance Type: t2.medium
+
+Name: k8s-master
+
+Key Pair: Your existing ansible-key.
+
+Security Group: Select the k8s-sg you just created.
+
+Click Launch instance.
+
+Launch Instance 2 (Worker):
+
+AMI: Ubuntu Server 22.04 LTS
+
+Instance Type: t2.medium
+
+Name: k8s-worker
+
+Key Pair: Your existing ansible-key.
+
+Security Group: Select k8s-sg.
+
+Click Launch instance.
+
+Phase 2: 📦 Install K8s on BOTH Nodes
+You must perform these steps on both the k8s-master and k8s-worker instances. SSH into both machines.
+
+Disable Swap (Required by K8s):
+
+Bash
+
+sudo swapoff -a
+# Make it permanent by commenting out the swap line in /etc/fstab
+sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+Enable Kernel Modules and sysctl Settings:
+
+Bash
+
+# Enable bridged networking
+sudo modprobe br_netfilter
+
+# Set K8s networking prerequisites
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+net.ipv4.ip_forward                 = 1
+EOF
+
+# Apply settings without reboot
+sudo sysctl --system
+Install containerd (Container Runtime):
+
+Bash
+
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl
+
+# Add Docker's official GPG key
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Add the Docker repository
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Install containerd
+sudo apt-get update
+sudo apt-get install -y containerd.io
+
+# Configure containerd to use 'systemd' cgroup driver (required by K8s)
+sudo mkdir -p /etc/containerd
+sudo containerd config default | sudo tee /etc/containerd/config.toml
+sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+
+# Restart containerd to apply changes
+sudo systemctl restart containerd
+Install kubeadm, kubelet, and kubectl:
+
+Bash
+
+# Add Kubernetes GPG key
+sudo curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+# Add Kubernetes repository
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+# Install K8s tools
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm kubectl
+
+# Pin the versions to prevent accidental upgrades
+sudo apt-mark hold kubelet kubeadm kubectl
+Phase 3: 🚀 Initialize the Master Node
+These commands are run ONLY on the k8s-master instance.
+
+Initialize the Cluster:
+
+We'll use Calico for our network plugin, which requires the --pod-network-cidr flag.
+
+Bash
+
+sudo kubeadm init --pod-network-cidr=192.168.0.0/16
+IMPORTANT: Save Your Output!
+
+When the command finishes, it will print two crucial pieces of text:
+
+A) The kubectl config commands. It looks like this:
+
+Bash
+
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+B) The kubeadm join command. It looks like this:
+
+Bash
+
+kubeadm join <MASTER_IP>:6443 --token <TOKEN> \
+    --discovery-token-ca-cert-hash sha256:<HASH>
+Copy the join command to a safe place. You need it for your worker node.
+
+Configure kubectl on Master:
+
+Run the kubectl config commands (from step 2-A) on your master node:
+
+Bash
+
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+Install a Network Plugin (Calico):
+
+Your cluster needs a CNI (Container Network Interface) to allow pods to communicate.
+
+Bash
+
+kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.3/manifests/calico.yaml
+Check Master Status:
+
+Bash
+
+kubectl get nodes
+You should see your k8s-master node, and its status will change to Ready after a minute.
+
+Phase 4: 🤝 Join the Worker Node
+Now, move to your k8s-worker instance.
+
+Run the Join Command:
+
+Paste the kubeadm join... command (from Phase 3, step 2-B) and run it with sudo:
+
+Bash
+
+sudo kubeadm join <MASTER_IP>:6443 --token <TOKEN> \
+    --discovery-token-ca-cert-hash sha256:<HASH>
+Verify on Master:
+
+Go back to your k8s-master node.
+
+Run kubectl get nodes again.
+
+After a minute, you should see both k8s-master and k8s-worker in the Ready state.
+
+Congratulations! Your 2-node K8s cluster is now operational.
+
+Phase 5: 🚢 Deploy Postgres and Adminer (Set A, Task 1)
+Now, let's complete your actual assignment. Run these commands on your k8s-master node.
+
+Install Git (if not present):
+
+Bash
+
+sudo apt-get install -y git
+Clone the Repository:
+
+As specified in the assignment, we'll use the provided Git repository.
+
+Bash
+
+git clone https://github.com/ajay-raut/k8s-postgres.git
+Deploy the Application:
+
+The repository contains all the necessary YAML manifest files (Deployments, Services, ConfigMaps, Secrets). We can apply them all at once.
+
+Bash
+
+cd k8s-postgres
+kubectl apply -f .
+This will create:
+
+postgres-configmap: For database settings.
+
+postgres-secret: For the database password.
+
+postgres-deployment: To run the PostgreSQL pod.
+
+postgres-service: To give the database a stable internal network name.
+
+adminer-deployment: To run the Adminer web UI pod.
+
+adminer-service: To expose Adminer to the outside world using a NodePort.
+
+Verify the Deployment:
+
+Check if your pods are running. It may take a minute or two for the images to be pulled and the containers to start.
+
+Bash
+
+kubectl get pods
+Expected Output:
+
+NAME                        READY   STATUS    RESTARTS   AGE
+adminer-deployment-xxxxx    1/1     Running   0          1m
+postgres-deployment-xxxxx   1/1     Running   0          1m
+Access Your Adminer Web UI:
+
+Find the NodePort: Get the port that K8s assigned to your adminer-service.
+
+Bash
+
+kubectl get service adminer-service -o jsonpath='{.spec.ports[0].nodePort}'
+This will output a port number (e.g., 31234).
+
+Open Your Browser: Go to the following address: http://<YOUR_WORKER_NODE_PUBLIC_IP>:<NODE_PORT>
+
+Login to Adminer:
+
+    * **System:** `PostgreSQL`
+Server: postgres-service (This is the K8s internal service name)
+
+Username: postgres (This is from the postgres-secret.yaml in the repo)
+
+Password: admin (This is from the postgres-secret.yaml in the repo)
+
+Database: postgres (This is from the postgres-configmap.yaml in the repo)
+
+Click Login. If it's successful, you are now managing your K8s-deployed PostgreSQL database from Adminer!
+
+This completes Set A of your Kubernetes assignment.
+
+**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+Set B: 
+1. Deploy a two-tier application, including a PostgreSQL database and a Go API on k8s.  
+Answer:
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+This is a great next step, moving from a pre-packaged application (Adminer) to a custom two-tier application.
+
+We will deploy this application onto the same 2-node Kubernetes cluster (one master, one worker) that you set up in Set A.
+
+Let's begin. All commands should be run on your k8s-master node.
+
+1. 📂 Clone the Application Repository
+First, get the application's manifest files from the Git repository provided in your assignment.
+
+Bash
+
+# Go back to your home directory
+cd ~
+
+# Clone the new repository
+git clone https://github.com/ajay-raut/k8s-2-tier-Go-Postgres-API.git
+
+# Move into the new directory
+cd k8s-2-tier-Go-Postgres-API
+2. 🚀 Deploy the Two-Tier Application
+This repository contains all the necessary YAML files for both the PostgreSQL database and the Go API. You can apply them all at once.
+
+Bash
+
+kubectl apply -f .
+This single command creates all the required K8s objects:
+
+Postgres Tier:
+
+postgres-deployment.yaml: Runs the PostgreSQL database pod.
+
+postgres-service.yaml: Creates an internal-only ClusterIP service so the Go API can find the database.
+
+Go API Tier:
+
+go-api-deployment.yaml: Runs the custom Go API pod. This deployment's manifest is configured to look for the database at postgres-service.
+
+go-api-service.yaml: Exposes the Go API to the outside world using a NodePort service.
+
+3. ✅ Verify the Deployment
+Let's check that all the pods for both tiers are running. It may take a minute or two for the container images to be pulled and the containers to start.
+
+Bash
+
+kubectl get pods
+You should see two new pods running (along with your pods from Set A, if you haven't deleted them):
+
+NAME                                READY   STATUS    RESTARTS   AGE
+go-api-deployment-xxxxx-xxxxx       1/1     Running   0          1m
+postgres-deployment-xxxxx-xxxxx   1/1     Running   0          1m
+4. 🧪 Test the Go API
+Now for the final test. The Go API is exposed via a NodePort. We need to find that port to access the application.
+
+Get the Service Details:
+
+Bash
+
+kubectl get service go-api-service
+Expected Output:
+
+NAME             TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
+go-api-service   NodePort   10.101.50.60   <none>        80:30001/TCP   2m
+Look at the PORT(S) column. In this example, the service is listening on port 30001 on the node. Your port will likely be in the 30000-32767 range.
+
+Access the API:
+
+You can now access your Go API using the Public IP of your k8s-worker node and the NodePort you just found.
+
+Open your web browser and go to: http://<YOUR_WORKER_NODE_PUBLIC_IP>:<NODE_PORT>
+
+Alternatively, you can use curl from your master node's terminal:
+
+Bash
+
+curl http://<YOUR_WORKER_NODE_PUBLIC_IP>:<YOUR_NODE_PORT>
+If successful, you should see a JSON message from the Go API, indicating it has successfully connected to the PostgreSQL database.
+
+You have now successfully deployed a custom two-tier application on Kubernetes!
+**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+

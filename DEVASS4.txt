@@ -1,0 +1,841 @@
+Ass-4
+
+Assignment 4: Ansible Variable Management, Templating, and Roles
+Set A: 
+1. Launch three new virtual machine instances. All should run an operating system from the 
+Debian family.
+2. Create a project folder containing an ansible.cfg file and an inventory file. The inventory 
+file should contain the details for two managed nodes. Then, establish and test the 
+connection between the Ansible control node and the two managed nodes. 
+3. Utilize variables to demonstrate user creation and add comments. Additionally, use the 
+debug module to output the name of the created user and their associated comment. 
+4. Generate host_vars and define the variables username and comment for a selected host. 
+5. Create group_vars and define the variables username and comment for the 'all' group and at 
+least one other group specified in the inventory.
+Answer:
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+1. Launch Your AWS EC2 Instances (Task 1)
+For this assignment, you need three identical Debian-family instances.
+
+Log in to the AWS EC2 Console.
+
+Launch 3 Instances:
+
+Name: debian-node-1 (and debian-node-2, debian-node-3 for the others)
+
+Application and OS Images (AMI): Ubuntu Server 22.04 LTS (This is in the Debian family)
+
+Instance type: t2.micro (Free Tier)
+
+Key pair: Select your existing ansible-key.
+
+Network settings: Select your existing ansible-sg security group. (Port 22 for SSH is all that's needed for this assignment).
+
+Get Your IPs: Once all three instances are running, note down their Public IPv4 addresses.
+
+2. Create Your Project (Task 2)
+This task asks for an inventory with two nodes. We'll start with that and then expand it in a later step to use all three instances.
+
+On your WSL terminal, create a new project folder:
+
+Bash
+
+mkdir ansible-setA4
+cd ansible-setA4
+
+# Create a directory for playbooks
+mkdir playbooks
+Copy and Secure Your Key:
+
+Copy your ansible-key.pem file into the ansible-setA4 folder.
+
+Set the correct permissions:
+
+Bash
+
+chmod 400 ansible-key.pem
+Create ansible.cfg:
+
+nano ansible.cfg
+
+Add the following content:
+
+Ini, TOML
+
+[defaults]
+inventory = inventory
+private_key_file = ansible-key.pem
+host_key_checking = False
+Create inventory:
+
+nano inventory
+
+Add your first two instances. Using names like this will be very important for Task 4.
+
+Ini, TOML
+
+# We use hostnames (debian-node-1) and link them to their IP
+# This makes host_vars easier to manage
+debian-node-1 ansible_host=<your-debian-1-public-ip>
+debian-node-2 ansible_host=<your-debian-2-public-ip>
+
+[all:vars]
+ansible_user=ubuntu
+Test Connection:
+
+Run a ping. It should only contact the two nodes you've added.
+
+Bash
+
+ansible all -m ping
+You should see two "SUCCESS" messages.
+
+3. Playbook with vars: Section (Task 3)
+This task demonstrates defining variables directly inside a playbook.
+
+
+Create the playbook file:
+
+Bash
+
+nano playbooks/create_user_vars.yml
+Add this content:
+
+YAML
+
+---
+- name: Create user from playbook variables
+  hosts: all  # This will run on debian-node-1 & debian-node-2
+  become: yes
+
+  # The 'vars' section defines variables for this play
+  vars:
+    username: "playbook_user"
+    comment: "User from playbook vars section"
+
+  tasks:
+    - name: Create the user
+      ansible.builtin.user:
+        name: "{{ username }}"
+        comment: "{{ comment }}"
+        state: present
+
+    - name: Debug the variables
+      ansible.builtin.debug:
+        msg: "Created user {{ username }} with comment: {{ comment }}"
+Run the playbook:
+
+Bash
+
+ansible-playbook playbooks/create_user_vars.yml
+Result: This will run on debian-node-1 and debian-node-2. Both will create a user named playbook_user and print the debug message.
+
+4 & 5. host_vars and group_vars (Tasks 4 & 5)
+This is the most important part of the assignment. We will now modify the project to use all 3 servers and demonstrate Ansible's variable precedence.
+
+
+
+
+
+A. Update Your Project Structure Create the group_vars and host_vars directories. Ansible loads variables from these directories automatically.
+
+Bash
+
+# Still in your ansible-setA4 directory
+mkdir group_vars
+mkdir host_vars
+B. Update Your inventory File Let's add our third node and organize all nodes into groups.
+
+nano inventory
+
+Replace the old content with this. Make sure to use your 3 public IPs.
+
+Ini, TOML
+
+[debian_nodes]
+debian-node-1 ansible_host=<your-debian-1-public-ip>
+debian-node-2 ansible_host=<your-debian-2-public-ip>
+
+[special_nodes]
+debian-node-3 ansible_host=<your-debian-3-public-ip>
+
+[all:vars]
+ansible_user=ubuntu
+C. Create Variable Files (Task 5)
+
+
+group_vars/all.yml (Lowest Precedence): These variables apply to every host.
+
+
+
+nano group_vars/all.yml
+
+Add this content:
+
+YAML
+
+username: "all_user"
+comment: "From group_vars/all"
+
+group_vars/debian_nodes.yml (Medium Precedence): These variables apply only to hosts in the [debian_nodes] group and will override all.yml.
+
+
+nano group_vars/debian_nodes.yml
+
+Add this content:
+
+YAML
+
+username: "debian_user"
+comment: "From group_vars/debian_nodes"
+D. Create Host Variable File (Task 4)
+
+
+host_vars/debian-node-1.yml (Highest Precedence): These variables apply only to debian-node-1 and will override all group variables. The filename must match the host's name in the inventory.
+
+
+nano host_vars/debian-node-1.yml
+
+Add this content:
+
+YAML
+
+username: "host_user"
+comment: "From host_vars/debian-node-1"
+E. Create the Test Playbook Now we'll create a simple playbook that just prints the variables so we can see which one Ansible chooses for each host.
+
+Create the file:
+
+Bash
+
+nano playbooks/test_precedence.yml
+Add this content:
+
+YAML
+
+---
+- name: Test variable precedence
+  hosts: all # This will run on all 3 nodes
+  gather_facts: no
+
+  tasks:
+    - name: Debug the username and comment
+      ansible.builtin.debug:
+        msg: "Host {{ inventory_hostname }} will use USER: {{ username }} and COMMENT: {{ comment }}"
+F. Run and Analyze the Result Run the playbook:
+
+Bash
+
+ansible-playbook playbooks/test_precedence.yml
+You will see three different outputs, perfectly demonstrating Ansible's precedence:
+
+
+Expected Output:
+
+debian-node-1 | SUCCESS => { "msg": "Host debian-node-1 will use USER: host_user and COMMENT: From host_vars/debian-node-1" }
+
+
+Why: host_vars always wins.
+
+
+debian-node-2 | SUCCESS => { "msg": "Host debian-node-2 will use USER: debian_user and COMMENT: From group_vars/debian_nodes" }
+
+
+Why: It's in the debian_nodes group, so group_vars/debian_nodes.yml overrides group_vars/all.yml.
+
+debian-node-3 | SUCCESS => { "msg": "Host debian-node-3 will use USER: all_user and COMMENT: From group_vars/all" }
+
+
+Why: It's not in the debian_nodes group and has no host_vars file, so it falls back to the default group_vars/all.yml.
+
+This completes Set A. You have successfully demonstrated how variables are defined and how precedence works.
+**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+Set B: 
+1. Launch two new virtual machine instances. All should run an operating system from the 
+Debian family. 
+2. Create a project folder containing an ansible.cfg file and an inventory file. The inventory 
+file should contain the details for two managed nodes. Then, establish and test the 
+connection between the Ansible control node and the two managed nodes. 
+3. Generate a templates directory containing the necessary files: 
+● Create index.html.j2 file and dipay ansible_hostname and 
+ansible_default_ipv4.address use jinja2 formatting to accomplish the task. 
+● Create and edit the nginx.conf.j2 file using Jinja2 templating to define the necessary 
+NGINX configuration. 
+4. Write playbook to install Nginx server on all hosts present in inventory file. 
+5. Create a separate Ansible playbook. This playbook should copy the nginx.conf.j2 file to 
+/etc/nginx/sites-available/[example.com].conf on all target servers. 
+6. Develop an independent Ansible playbook. This playbook's purpose is to replace the content 
+within index.nginx-debian.html with the index.html.j2 file, and this change should be 
+applied to all designated target servers. 
+Answer:
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+1. & 2. Launch Instances and Set Up Project
+First, let's get your AWS instances and your local Ansible project folder set up.
+
+Launch AWS Instances:
+
+Go to your AWS EC2 Console.
+
+Launch two new instances.
+
+AMI: Ubuntu Server 22.04 LTS (Debian family).
+
+Instance Type: t2.micro.
+
+Key Pair: Your existing ansible-key.
+
+Security Group: Select your ansible-sg.
+
+CRITICAL: Click Edit on network settings, go to your ansible-sg security group, and add an Inbound Rule to allow HTTP from Anywhere (Port 80). You will need this to see your website.
+
+Note down the Public IPv4 addresses for both instances.
+
+Create Project Folder (on your WSL terminal):
+
+Bash
+
+# Create a new, clean project for this assignment
+mkdir ansible-setB4
+cd ansible-setB4
+
+# Create directories for playbooks and templates
+mkdir playbooks
+mkdir templates
+Copy and Secure Your Key:
+
+Copy your ansible-key.pem file into the ansible-setB4 folder.
+
+Set the correct permissions:
+
+Bash
+
+chmod 400 ansible-key.pem
+Create ansible.cfg:
+
+nano ansible.cfg
+
+Add this content:
+
+Ini, TOML
+
+[defaults]
+inventory = inventory
+private_key_file = ansible-key.pem
+host_key_checking = False
+Create inventory:
+
+nano inventory
+
+Add your two new servers. We'll group them as [webservers].
+
+Ini, TOML
+
+[webservers]
+<your-web-1-public-ip>
+<your-web-2-public-ip>
+
+[all:vars]
+ansible_user=ubuntu
+Test Connection:
+
+Bash
+
+ansible all -m ping
+You should see two green "SUCCESS" messages.
+
+3. Generate Templates Directory
+Now, let's create the two Jinja2 templates as requested.
+
+A. Create index.html.j2 This file will dynamically pull in Ansible "facts" (discovered variables) from each server.
+
+Create the file:
+
+Bash
+
+nano templates/index.html.j2
+Add this HTML content:
+
+HTML
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Welcome to {{ ansible_hostname }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background-color: #f0f8ff; }
+        .container { margin-top: 50px; padding: 20px; background-color: #fff; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        h1 { color: #333; }
+        p { color: #555; font-size: 1.2em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Hello from {{ ansible_hostname }}!</h1>
+        <p>This server is being managed by Ansible.</p>
+        <p>You can reach me at IP address: <strong>{{ ansible_default_ipv4.address }}</strong></p>
+    </div>
+</body>
+</html>
+B. Create nginx.conf.j2 This will be our custom Nginx server configuration. We'll use a variable {{ domain_name }} to make it reusable.
+
+Create the file:
+
+Bash
+
+nano templates/nginx.conf.j2
+Add this Nginx configuration:
+
+Nginx
+
+server {
+    listen 80;
+    listen [::]:80;
+
+    # This will be a variable we pass from our playbook
+    server_name {{ domain_name }};
+
+    root /var/www/html;
+    index index.html index.htm;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+4. Playbook: Install Nginx
+Create the first playbook to install Nginx.
+
+Create the file:
+
+Bash
+
+nano playbooks/install_nginx.yml
+Add this content:
+
+YAML
+
+---
+- name: Install and start Nginx
+  hosts: webservers
+  become: yes
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Install nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+
+    - name: Ensure Nginx is started and enabled
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: yes
+Run the playbook:
+
+Bash
+
+ansible-playbook playbooks/install_nginx.yml
+At this point, Nginx is installed and running with its default page.
+
+5. Playbook: Deploy Nginx Configuration
+Now, create a separate playbook to deploy your custom Nginx configuration. This playbook will disable the default config and enable yours.
+
+Create the file:
+
+Bash
+
+nano playbooks/deploy_config.yml
+Add this content:
+
+YAML
+
+---
+- name: Deploy custom Nginx configuration
+  hosts: webservers
+  become: yes
+
+  vars:
+    domain_name: "example.com" # Define the variable for our template
+
+  tasks:
+    - name: Copy Nginx config template
+      ansible.builtin.template:
+        src: templates/nginx.conf.j2
+        dest: "/etc/nginx/sites-available/{{ domain_name }}.conf"
+        mode: '0644'
+      notify: Restart Nginx
+
+    - name: Create symlink to enable our site
+      ansible.builtin.file:
+        src: "/etc/nginx/sites-available/{{ domain_name }}.conf"
+        dest: "/etc/nginx/sites-enabled/{{ domain_name }}.conf"
+        state: link
+      notify: Restart Nginx
+
+    - name: Remove default Nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Restart Nginx
+
+  # Handlers only run if a task "notifies" them (i.e., if a change was made)
+  handlers:
+    - name: Restart Nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+Run the playbook:
+
+Bash
+
+ansible-playbook playbooks/deploy_config.yml
+This playbook will copy the config, enable it, disable the default, and then restart Nginx only if any of those tasks made a change.
+
+6. Playbook: Deploy Custom HTML Page
+Finally, create the third playbook to deploy your custom index.html page. This will replace the default Nginx page content.
+
+Create the file:
+
+Bash
+
+nano playbooks/deploy_html.yml
+Add this content:
+
+YAML
+
+---
+- name: Deploy custom HTML index page
+  hosts: webservers
+  become: yes
+
+  tasks:
+    - name: Deploy new index.html from template
+      ansible.builtin.template:
+        src: templates/index.html.j2
+        dest: /var/www/html/index.html
+        owner: www-data
+        group: www-data
+        mode: '0644'
+
+    - name: Remove the default Nginx page
+      ansible.builtin.file:
+        path: /var/www/html/index.nginx-debian.html
+        state: absent
+Run the playbook:
+
+Bash
+
+ansible-playbook playbooks/deploy_html.yml
+Verify Your Work
+Open your web browser and navigate to the Public IPv4 address of both of your instances. You should see your new custom web page, and the <h1> tag will show the server's internal hostname (e.g., ip-172-31-xx-xx).
+
+This completes Set B! You have successfully used three separate playbooks to install a web server, configure it with a Jinja2 template, and deploy a custom, dynamic web page.
+
+**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+Set C: 
+1. Launch two new virtual machine instances. The first should run an operating system from 
+the Debian family, and the second should run one from the Red Hat family. 
+2. Create a project folder containing an ansible.cfg file and an inventory file. The inventory 
+file should contain the details for two managed nodes. Then, establish and test the 
+connection between the Ansible control node and the two managed nodes. 
+3. Create an Ansible role named "apache" designed to serve an HTML page displaying the 
+hostname and IPv4 address on an Apache server. This role should be used in playbooks 
+targeting servers within the Debian family. 
+4. Create an Ansible role named "httpd" designed to serve an HTML page displaying the 
+hostname and IPv4 address on an httpd server. This role should be used in playbooks 
+targeting servers within the RedHat family.
+Answer:
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+1. & 2. Setup and Inventory (Tasks 1 & 2)
+First, let's launch your two different VMs and set up the Ansible project folder.
+
+Launch AWS Instances:
+
+Go to your AWS EC2 Console.
+
+Security Group: Ensure your ansible-sg group allows HTTP (Port 80) from Anywhere (0.0.0.0/0). You need this to see the websites.
+
+Instance 1 (Debian):
+
+Name: debian-server
+
+AMI: Ubuntu Server 22.04 LTS
+
+Key/Security Group: ansible-key and ansible-sg.
+
+Instance 2 (Red Hat):
+
+Name: redhat-server
+
+AMI: Amazon Linux 2023 (Red Hat family)
+
+Key/Security Group: ansible-key and ansible-sg.
+
+Note both Public IPv4 addresses.
+
+Create Project Folder (on your WSL terminal):
+
+Bash
+
+# Create a new project folder
+mkdir ansible-setC4
+cd ansible-setC4
+
+# Create the 'roles' directory as required
+mkdir roles
+Copy and Secure Your Key:
+
+Copy your ansible-key.pem file into the ansible-setC4 folder.
+
+chmod 400 ansible-key.pem
+
+Create ansible.cfg:
+
+nano ansible.cfg
+
+Add this content:
+
+Ini, TOML
+
+[defaults]
+inventory = inventory
+roles_path = ./roles
+private_key_file = ansible-key.pem
+host_key_checking = False
+Create inventory:
+
+nano inventory
+
+Add your two servers, organized into OS-specific groups. This is crucial for targeting your roles.
+
+Ini, TOML
+
+[debian]
+<your-ubuntu-public-ip> ansible_user=ubuntu
+
+[redhat]
+<your-amazon-linux-public-ip> ansible_user=ec2-user
+Test Connection:
+
+Bash
+
+ansible all -m ping
+You should get a green "SUCCESS" from both your debian and redhat hosts.
+
+3. Create 'apache' Role (for Debian) 
+
+Now we will create the role scaffold for apache and add its tasks and templates.
+
+Generate Role Structure:
+
+In your ansible-setC4 directory, run:
+
+Bash
+
+ansible-galaxy init roles/apache
+This creates the standard role directory structure for you. 
+
+Create the Template:
+
+This is the HTML file that will be served.
+
+Create the file roles/apache/templates/index.html.j2:
+
+Bash
+
+nano roles/apache/templates/index.html.j2
+Add this content. It's the same template content as in Set B, which is fine—roles are all about reusability.
+
+HTML
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Welcome to {{ ansible_hostname }}</title>
+</head>
+<body style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
+    <h1>Hello from {{ ansible_hostname }}</h1>
+    <p>My IPv4 address is: <strong>{{ ansible_default_ipv4.address }}</strong></p>
+    <p>This server is in the <strong>{{ ansible_os_family }}</strong> family.</p>
+</body>
+</html>
+Add the Role Tasks:
+
+This file tells Ansible what to do.
+
+Edit the main tasks file roles/apache/tasks/main.yml: 
+
+Bash
+
+nano roles/apache/tasks/main.yml
+Replace all the default content with this:
+
+YAML
+
+---
+# tasks file for roles/apache
+- name: Install apache2 on Debian
+  ansible.builtin.apt:
+    name: apache2
+    state: present
+    update_cache: yes
+
+- name: Deploy custom index.html
+  ansible.builtin.template:
+    src: index.html.j2
+    dest: /var/www/html/index.html
+    mode: '0644'
+  notify: Restart apache2 # Notifies the handler
+
+- name: Ensure apache2 service is started and enabled
+  ansible.builtin.service:
+    name: apache2
+    state: started
+    enabled: yes
+Add the Handler:
+
+Handlers are triggered by notify events and are used to restart services. 
+
+Edit the handler file roles/apache/handlers/main.yml:
+
+Bash
+
+nano roles/apache/handlers/main.yml
+Replace all default content with this:
+
+YAML
+
+---
+# handlers file for roles/apache
+- name: Restart apache2
+  ansible.builtin.service:
+    name: apache2
+    state: restarted
+4. Create 'httpd' Role (for Red Hat) 
+
+This is the exact same process, but for the Red Hat (httpd) server.
+
+Generate Role Structure:
+
+In your ansible-setC4 directory, run:
+
+Bash
+
+ansible-galaxy init roles/httpd
+Create the Template:
+
+We can use the exact same template file.
+
+Create roles/httpd/templates/index.html.j2:
+
+Bash
+
+nano roles/httpd/templates/index.html.j2
+Paste the same HTML content you used for the apache role.
+
+Add the Role Tasks:
+
+Edit the main tasks file roles/httpd/tasks/main.yml:
+
+Bash
+
+nano roles/httpd/tasks/main.yml
+Replace all default content with this. Note the different package and service names.
+
+YAML
+
+---
+# tasks file for roles/httpd
+- name: Install httpd on Red Hat
+  ansible.builtin.yum:
+    name: httpd
+    state: present
+
+- name: Deploy custom index.html
+  ansible.builtin.template:
+    src: index.html.j2
+    dest: /var/www/html/index.html
+    mode: '0644'
+  notify: Restart httpd # Notifies the handler
+
+- name: Ensure httpd service is started and enabled
+  ansible.builtin.service:
+    name: httpd
+    state: started
+    enabled: yes
+Add the Handler:
+
+Edit the handler file roles/httpd/handlers/main.yml:
+
+Bash
+
+nano roles/httpd/handlers/main.yml
+Replace all default content with this:
+
+YAML
+
+---
+# handlers file for roles/httpd
+- name: Restart httpd
+  ansible.builtin.service:
+    name: httpd
+    state: restarted
+5. Create and Run the Main Playbook
+You have built your roles. Now you need a "main" playbook (like site.yml) to call them.
+
+Check Your Structure: Your ansible-setC4 directory should now look like this:
+
+ansible-setC4/
+├── ansible.cfg
+├── inventory
+├── roles/
+│   ├── apache/
+│   │   ├── tasks/main.yml
+│   │   ├── templates/index.html.j2
+│   │   ├── handlers/main.yml
+│   │   └── ... (other empty dirs)
+│   └── httpd/
+│       ├── tasks/main.yml
+│       ├── templates/index.html.j2
+│       ├── handlers/main.yml
+│       └── ... (other empty dirs)
+└── site.yml  <-- We will create this now
+Create the Main Playbook:
+
+nano site.yml
+
+Add this content. This playbook has two plays: one for each host group.
+
+YAML
+
+---
+- name: Configure Debian Web Servers
+  hosts: debian
+  become: yes
+  roles:
+    - apache  # This runs the 'apache' role
+
+- name: Configure Red Hat Web Servers
+  hosts: redhat
+  become: yes
+  roles:
+    - httpd   # This runs the 'httpd' role
+Run the Playbook!
+
+Bash
+
+ansible-playbook site.yml
+Ansible will run the first play, see hosts: debian, and only run the apache role on your Ubuntu server. Then, it will run the second play, see hosts: redhat, and only run the httpd role on your Amazon Linux server.
+
+6. Verify the Deployment
+Get the Public IPv4 address for your debian-server and paste it into your browser. You should see your custom page, which will say "This server is in the Debian family."
+
+Get the Public IPv4 address for your redhat-server and paste it into your browser. You should see your custom page, which will say "This server is in the RedHat family."
+
+**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************

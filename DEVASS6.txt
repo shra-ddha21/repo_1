@@ -1,0 +1,579 @@
+Ass-6
+
+Set A: 
+1. Launch MLflow tracking server & also Configure the MLflow Tracking Client. 
+2. Search experiments and view the metadata associated with the Experiments that are on the 
+server. 
+3. Display default experiment name and life cycle stage. 
+4. Create apples experiment with meaningful tags & Use search_experiments() to search on 
+the project_name tag key. 
+5. Generates a synthetic dataset for predicting apple sales demand with seasonality and 
+inflation. 
+6. Using MLflow Tracking Train and log the model. 
+Answer:
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Prerequisites: Install Required Libraries
+Before you begin, you'll need to install MLflow and some common data science libraries.
+
+Bash
+
+pip install mlflow scikit-learn pandas numpy
+1. Launch MLflow Tracking Server & Configure Client
+You need one terminal to run the server and another to run your scripts.
+
+Terminal 1 (Run the Server): Start the MLflow server. This will host the UI and store all your experiment data.
+
+Bash
+
+# This creates a local 'mlruns' directory to store data
+mlflow server --host 127.0.0.1 --port 8080
+You can now access the MLflow UI by opening http://127.0.0.1:8080 in your browser.
+
+Terminal 2 (Configure Your Client): Open a new terminal. You must tell your Python scripts where to log their data by setting this environment variable.
+
+Bash
+
+# For WSL/Linux/macOS
+export MLFLOW_TRACKING_URI="http://127.0.0.1:8080"
+
+# (If you are using Windows PowerShell, use this instead):
+# $env:MLFLOW_TRACKING_URI = "http://127.0.0.1:8080"
+All Python scripts in the steps below should be run from this second terminal.
+
+2. & 3. Search Experiments & View Default Metadata
+Let's create a script to view all experiments. This will show you the "Default" experiment that MLflow creates.
+
+Create a file named search_experiments.py:
+
+Bash
+
+nano search_experiments.py
+Paste this code inside:
+
+Python
+
+import mlflow
+from mlflow.entities import ViewType
+
+# MLFLOW_TRACKING_URI is already set as an environment variable
+client = mlflow.tracking.MlflowClient()
+
+# Search for all experiments
+experiments = client.search_experiments(view_type=ViewType.ALL)
+
+print("--- All Experiments ---")
+for exp in experiments:
+    print(f"Name: {exp.name}")
+    print(f"Experiment ID: {exp.experiment_id}")
+    print(f"Lifecycle Stage: {exp.lifecycle_stage}")
+    print(f"Artifact Location: {exp.artifact_location}")
+    print("-----------------------")
+Run the script:
+
+Bash
+
+python search_experiments.py
+Expected Output: You will see the details for the "Default" experiment, including its name and "active" lifecycle stage.
+
+4. Create "Apples" Experiment & Search for It
+Now, let's create the specific "apples experiment" with the tags mentioned in your lab manual.
+
+Create a file named create_experiment.py:
+
+Bash
+
+nano create_experiment.py
+Paste this code inside:
+
+Python
+
+import mlflow
+
+client = mlflow.tracking.MlflowClient()
+
+# 1. Define tags for the experiment
+experiment_tags = {
+    "project_name": "grocery-forecasting",
+    "store_dept": "produce",
+    "team": "stores-ml",
+    "project_quarter": "Q3-2023",
+    "mlflow.note.content": "This experiment contains the produce models for apples."
+}
+
+try:
+    # 2. Create the experiment
+    experiment_name = "Apple_Models"
+    experiment_id = client.create_experiment(
+        name=experiment_name, tags=experiment_tags
+    )
+    print(f"Successfully created experiment '{experiment_name}' with ID: {experiment_id}")
+
+except mlflow.exceptions.RestException as e:
+    print(f"Experiment '{experiment_name}' already exists. {e}")
+
+# 3. Search for the experiment using its tag
+print("\n--- Searching for 'grocery-forecasting' project ---")
+experiments = client.search_experiments(
+    filter_string="tags.`project_name` = 'grocery-forecasting'"
+)
+
+for exp in experiments:
+    print(f"Found: {exp.name} (ID: {exp.experiment_id})")
+Run the script:
+
+Bash
+
+python create_experiment.py
+Check your MLflow UI (http://127.0.0.1:8080): You will now see your new "Apple_Models" experiment in the list!
+
+5. & 6. Generate Dataset, Train, and Log the Model
+This final script will do everything: generate the synthetic data, train a simple model, and log all the parameters, metrics, and the model itself to your "Apple_Models" experiment.
+
+Create a file named train_model.py:
+
+Bash
+
+nano train_model.py
+Paste this code inside:
+
+Python
+
+import mlflow
+import mlflow.sklearn
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score
+
+# --- Task 5: Generate Synthetic Dataset ---
+def get_apple_sales_data():
+    """Generates a synthetic dataset for apple sales."""
+    print("Generating synthetic apple sales data...")
+    np.random.seed(42)
+    num_days = 365
+    days = pd.date_range(start="2023-01-01", periods=num_days)
+
+    # Seasonality (sales higher in autumn)
+    seasonality = 100 + 50 * np.sin(2 * np.pi * (days.dayofyear - 270) / 365)
+
+    # Inflation/Trend (sales slowly increasing)
+    inflation = 0.1 * np.arange(num_days)
+
+    # Noise
+    noise = np.random.normal(0, 25, num_days)
+
+    # Price (randomly fluctuating)
+    price = np.random.uniform(1.0, 1.5, num_days)
+
+    # Calculate sales
+    sales = (seasonality + inflation - 50 * price + noise).astype(int)
+
+    df = pd.DataFrame({
+        "day_of_year": days.dayofyear,
+        "price": price,
+        "sales": sales
+    })
+    df = df.clip(lower=0) # No negative sales
+    print("Dataset generated.")
+    return df
+
+# --- Task 6: Train and Log Model ---
+def train():
+    df = get_apple_sales_data()
+
+    # Set the experiment we want to log to
+    mlflow.set_experiment("Apple_Models")
+
+    # Start a new MLflow run
+    with mlflow.start_run(run_name="Simple Linear Regression") as run:
+        print(f"Starting run: {run.info.run_name}")
+        print(f"Run ID: {run.info.run_id}")
+
+        # Prepare data
+        X = df[["day_of_year", "price"]]
+        y = df["sales"]
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        # 1. Log Parameters
+        mlflow.log_param("model_type", "LinearRegression")
+        mlflow.log_param("test_size", 0.2)
+
+        # Train model
+        model = LinearRegression()
+        model.fit(X_train, y_train)
+        preds = model.predict(X_test)
+
+        # 2. Log Metrics
+        rmse = np.sqrt(mean_squared_error(y_test, preds))
+        r2 = r2_score(y_test, preds)
+
+        mlflow.log_metric("rmse", rmse)
+        mlflow.log_metric("r2", r2)
+        print(f"Logged Metrics: RMSE={rmse:.2f}, R2={r2:.2f}")
+
+        # 3. Log the Model
+        mlflow.sklearn.log_model(model, "model")
+        print("Model logged successfully.")
+
+        # Log a dataset artifact (optional)
+        df.to_csv("apple_sales.csv", index=False)
+        mlflow.log_artifact("apple_sales.csv")
+        print("Artifact (dataset) logged.")
+
+if __name__ == "__main__":
+    train()
+Run the script:
+
+Bash
+
+python train_model.py
+7. View the Final Result
+Go back to your MLflow UI at http://127.0.0.1:8080. Click on the "Apple_Models" experiment. You will now see your first run, "Simple Linear Regression". Click on it to see the parameters, metrics (RMSE, R2), and the saved model artifact. You have successfully completed Set A!
+
+**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
+Set B: 
+1. Launch MLflow tracking server for Hyperparameter Tuning & Deployment. 
+2. The Challenge: Wine Quality Prediction 
+We'll optimize a neural network that predicts wine quality from chemical properties. Our 
+goal is to minimize Root Mean Square Error (RMSE) by finding the optimal combination 
+of: 
+● Learning Rate: How aggressively the model learns 
+● Momentum: How much the optimizer considers previous updates 
+3. Step 1: Prepare Your Data 
+4. Step 2: Define Your Model Architecture 
+5. Step 3: Set Up Hyperparameter Optimization
+Answer:
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+This is a fantastic and very practical assignment. You'll be combining MLflow's tracking capabilities with a hyperparameter optimization library (hyperopt) to find the best neural network for predicting wine quality.
+
+Here is the complete, self-contained solution for Set B.
+
+Phase 1: Setup
+You'll need one terminal to run the MLflow server and a second to run your Python script.
+
+1. Install Required Libraries: This script requires mlflow, tensorflow (for the neural network), scikit-learn (for data prep), pandas, and hyperopt (for the tuning).
+
+Bash
+
+pip install mlflow tensorflow scikit-learn pandas hyperopt
+2. Task 1: Launch MLflow Tracking Server  In your first terminal, start the MLflow server. This will host the UI and store all your experiment runs.
+
+Bash
+
+# This creates a local 'mlruns' directory to store data
+mlflow server --host 127.0.0.1 --port 8080
+Keep this terminal running. You can open the MLflow UI in your browser at http://127.0.0.1:8080.
+
+3. Configure Your Client: In your second terminal, set the environment variable so your Python script knows where to log its data.
+
+Bash
+
+# For WSL/Linux/macOS
+export MLFLOW_TRACKING_URI="http://127.0.0.1:8080"
+
+# (If using Windows PowerShell, use this instead):
+# $env:MLFLOW_TRACKING_URI = "http://127.0.0.1:8080"
+Phase 2: The Hyperparameter Tuning Script
+In your second terminal, create a single Python file named tune_wine_model.py. This script will perform all the steps (2 through 6) from your assignment.
+
+Bash
+
+nano tune_wine_model.py
+Copy and paste the entire block of code below into this file.
+
+Python
+
+import mlflow
+import mlflow.tensorflow
+import pandas as pd
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from hyperopt import fmin, tpe, hp, Trials, STATUS_OK
+import numpy as np
+import warnings
+
+# Suppress warnings
+warnings.filterwarnings("ignore")
+
+# --- Task 3: Prepare Your Data ---
+def prepare_data():
+    print("Preparing data...")
+    # Load the well-known wine quality dataset
+    data_url = "http://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv"
+    data = pd.read_csv(data_url, sep=';')
+
+    # Split into features (X) and target (y)
+    X = data.drop(columns=["quality"])
+    y = data["quality"]
+
+    # Create training and validation sets
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # Scale the features
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+    
+    return X_train_scaled, X_val_scaled, y_train, y_val
+
+# --- Task 4: Define Your Model Architecture ---
+def build_model(learning_rate, momentum):
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Dense(64, activation='relu', input_shape=[X_train_scaled.shape[1]]),
+        tf.keras.layers.Dense(32, activation='relu'),
+        tf.keras.layers.Dense(1) # Output layer for regression
+    ])
+
+    # Compile the model with the optimizer using our tuning parameters
+    optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate, momentum=momentum)
+    
+    model.compile(
+        optimizer=optimizer,
+        loss='mean_squared_error',
+        metrics=[tf.keras.metrics.RootMeanSquaredError(name='rmse')] # Goal: minimize RMSE
+    )
+    return model
+
+# --- Task 5: Set Up Hyperparameter Optimization ---
+def objective(params):
+    """
+    The function that Hyperopt will try to minimize.
+    It trains a model and returns the validation RMSE.
+    """
+    learning_rate = params['learning_rate']
+    momentum = params['momentum']
+
+    # Start a new MLflow run for this specific trial
+    with mlflow.start_run() as run:
+        mlflow.log_params(params)
+
+        model = build_model(learning_rate, momentum)
+
+        # Train the model, automatically logging metrics to MLflow
+        model.fit(
+            X_train_scaled, y_train,
+            validation_data=(X_val_scaled, y_val),
+            epochs=20,
+            batch_size=32,
+            callbacks=[mlflow.tensorflow.autolog(every_n_iter=1, log_models=False)], # Autolog metrics
+            verbose=0
+        )
+
+        # Evaluate the final model and get the validation RMSE
+        results = model.evaluate(X_val_scaled, y_val, verbose=0)
+        val_rmse = results[1] # Index 1 is 'rmse' as defined in compile()
+        
+        print(f"  Trial complete: LR={learning_rate:.4f}, Momentum={momentum:.2f} -> RMSE={val_rmse:.4f}")
+
+        # Log the final validation RMSE (our target metric)
+        mlflow.log_metric("val_rmse", val_rmse)
+        
+        # Log the trained model as an artifact
+        mlflow.sklearn.log_model(model, "model")
+
+        # Hyperopt needs a 'loss' value to minimize
+        return {'loss': val_rmse, 'status': STATUS_OK}
+
+# --- Main script execution ---
+
+# 1. Prepare data once
+X_train_scaled, X_val_scaled, y_train, y_val = prepare_data()
+
+# 2. Set the MLflow Experiment
+experiment_name = "Wine_Quality_Optimization"
+mlflow.set_experiment(experiment_name)
+print(f"Logging runs to MLflow experiment: '{experiment_name}'")
+
+# 3. Define the Hyperopt search space for our parameters
+space = {
+    'learning_rate': hp.loguniform('learning_rate', np.log(0.001), np.log(0.1)),
+    'momentum': hp.uniform('momentum', 0.0, 1.0)
+}
+
+# --- Task 6: Run the Hyperparameter Optimization ---
+print("Running hyperparameter optimization...")
+trials = Trials()
+best_params = fmin(
+    fn=objective,
+    space=space,
+    algo=tpe.suggest, # Tree-structured Parzen Estimator (a smart tuning algorithm)
+    max_evals=15,     # Number of different models to train
+    trials=trials
+)
+
+print(f"\nOptimization complete!")
+print(f"Best parameters found: {best_params}")
+
+Phase 3: Run the Script
+Now, execute the script from your second terminal.
+
+Bash
+
+python tune_wine_model.py
+You will see the script prepare the data and then start training 15 different models, one for each hyperparameter combination. Each trial's results will be logged to your MLflow server.
+
+Phase 4: Analyze and Register (Tasks 7 & 8)
+Now, go to your MLflow UI in the browser: http://127.0.0.1:8080.
+
+
+Task 7: Analyze Results in MLflow UI 
+
+Click on the "Wine_Quality_Optimization" experiment in the left-hand menu.
+
+You will see a table with all 15 runs.
+
+Click the val_rmse column header to sort the runs from lowest (best) to highest (worst).
+
+Visualize the results:
+
+Select several of the best and worst runs by clicking the checkbox next to them.
+
+Click the "Compare" button.
+
+Select the "Parallel coordinates" plot type.
+
+This plot will instantly show you which ranges of learning_rate and momentum led to the lowest val_rmse (the blue lines).
+
+
+Task 8: Register Your Best Model 
+
+Go back to the experiment's table view.
+
+Click on the Run Name of the best-performing run (the one with the lowest val_rmse).
+
+Scroll down to the "Artifacts" section. You will see the "model" folder that was logged.
+
+Click the "Register Model" button.
+
+Select "Create New Model" and enter the name wine-quality-predictor.
+
+Click "Register".
+
+Your model is now registered! You can go to the "Models" tab in the main MLflow UI to see it. From there, you can transition its version from "None" to "Staging" or "Production".
+
+This completes Set B.
+**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+Set C: 
+1. Deploy Your Model Locally (Test your model with a REST API deployment). 
+2. Build Production Container (Create a Docker container for deployment and test it). 
+Answer:
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+This is the final and most exciting part of the MLOps assignment: deploying your model to make it usable.
+
+We will use the MLflow Tracking Server you already have running (from Set B) and the wine-quality-predictor model you registered.
+
+You will need three separate terminals for this set.
+
+Terminal 1: Your MLflow server (should still be running).
+
+Terminal 2: Your main work terminal (where you ran the Set B script).
+
+Terminal 3: A new, clean terminal for sending test requests.
+
+Prerequisites
+Terminal 1: MLflow Server Running Make sure your MLflow server is running from Set B. If not, start it:
+
+Bash
+
+mlflow server --host 127.0.0.1 --port 8080
+Terminal 2: Set Tracking URI Open your main work terminal and set the environment variable:
+
+Bash
+
+export MLFLOW_TRACKING_URI="http://127.0.0.1:8080"
+1. 🚀 Deploy Your Model Locally (Task 1)
+This task uses MLflow's built-in tools to serve your registered model as a local REST API.
+
+In Terminal 2, run the following command. This fetches your "latest" registered model and starts a new web server for it on port 5001.
+
+Bash
+
+mlflow models serve -m "models:/wine-quality-predictor/latest" -p 5001 --no-conda
+-m "models:/...": This is the Model Registry URI for your model.
+
+-p 5001: We use port 5001 so it doesn't conflict with the MLflow UI on 8080.
+
+--no-conda: This tells MLflow to use your current Python environment (which already has tensorflow installed) instead of trying to create a new one.
+
+Your Terminal 2 will now be busy running this API server.
+
+In Terminal 3, we will send a test request using curl. The model expects 11 features. We'll send a sample row of data.
+
+Bash
+
+curl -X POST -H "Content-Type:application/json" -d '{
+  "dataframe_split": {
+    "columns": ["f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11"],
+    "data": [
+      [0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7, -0.8, 0.9, -1.0, 1.1]
+    ]
+  }
+}' http://127.0.0.1:5001/invocations
+Expected Output: You will get a JSON response with a prediction, proving your API is live!
+
+JSON
+
+{
+  "predictions": [
+    [5.4321] 
+  ]
+}
+(Your prediction value will vary).
+
+2. 🐳 Build Production Container (Task 2)
+Now, let's package this entire application (model + web server + dependencies) into a self-contained Docker container.
+
+Stop the local server. Go to Terminal 2 and press Ctrl + C to stop the server you started in the previous step.
+
+Make sure Docker is running. You must have Docker Desktop (or the Docker daemon on Linux) running on your machine.
+
+In Terminal 2, run the MLflow command to build the container:
+
+Bash
+
+mlflow models build-docker -m "models:/wine-quality-predictor/latest" -n "wine-quality-api:v1" --no-conda
+-n "wine-quality-api:v1": This sets the name and tag for your new Docker image.
+
+MLflow will now:
+
+Fetch your model.
+
+Create a Dockerfile.
+
+Run the docker build process.
+
+Install tensorflow, mlflow, gunicorn, etc., inside the image.
+
+This may take a few minutes.
+
+Run your new container: Once the build is complete, run your newly built image. This command maps your host's port 5002 to the container's internal port 8080.
+
+Bash
+
+docker run -p 5002:8080 "wine-quality-api:v1"
+Your Terminal 2 is now running your production-ready container.
+
+In Terminal 3, test the containerized API. It's the same curl command as before, but now pointed to port 5002.
+
+Bash
+
+curl -X POST -H "Content-Type:application/json" -d '{
+  "dataframe_split": {
+    "columns": ["f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11"],
+    "data": [
+      [0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7, -0.8, 0.9, -1.0, 1.1]
+    ]
+  }
+}' http://127.0.0.1:5002/invocations
+Final Result: You will get the exact same JSON prediction as before, but this time it's being served from a portable, isolated Docker container.
+
+This completes all of Assignment 6! You have successfully trained, tuned, registered, and deployed a machine learning model.
+
+**************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************************
+
